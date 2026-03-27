@@ -1,0 +1,38 @@
+[project]
+name = "venturelens-ai"
+version = "0.1.0"
+description = "AI-powered startup due diligence application using CrewAI and Streamlit"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "crewai>=1.12.2",
+    "crewai-tools>=1.12.2",
+    "streamlit>=1.55.0",
+]
+
+[tool.uv]
+# Exclude lancedb — no Windows wheels, not needed
+override-dependencies = [
+    "lancedb; sys_platform == 'never'",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "ruff>=0.15.8",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
