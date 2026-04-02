@@ -1,6 +1,11 @@
+import shutil
+from pathlib import Path
+
 import pytest
 
 from models import AgentFindings, AnalysisRun, CriticFindings, MemoOutput, RunInput, StageResult
+
+_PERSISTENCE_TEST_WORKDIR = Path(__file__).resolve().parent / "_persistence_test_workdir"
 
 
 @pytest.fixture
@@ -47,3 +52,18 @@ def sample_analysis_run(sample_run_input, sample_agent_findings):
         stage_results=[market_stage, critic_stage],
         memo=memo,
     )
+
+
+@pytest.fixture
+def isolated_db_path(request):
+    test_dir = _PERSISTENCE_TEST_WORKDIR / request.node.name
+    if test_dir.exists():
+        shutil.rmtree(test_dir)
+
+    test_dir.mkdir(parents=True, exist_ok=True)
+    db_path = test_dir / "db" / "venturelens-test.db"
+
+    yield db_path
+
+    if test_dir.exists():
+        shutil.rmtree(test_dir)
