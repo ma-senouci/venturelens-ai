@@ -1,4 +1,4 @@
-from models import RunInput
+from models import AnalysisRun, RunInput
 
 
 def build_run_input(
@@ -18,3 +18,7 @@ def build_run_input(
         thesis=thesis.strip() or None,
         analysis_focus=analysis_focus.strip() or None,
     )
+
+
+def create_analysis_run(run_input: RunInput) -> AnalysisRun:
+    return AnalysisRun(status="running", input=run_input, stage_results=[])

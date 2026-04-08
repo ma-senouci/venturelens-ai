@@ -3,7 +3,8 @@ from datetime import datetime
 
 import pytest
 
-from intake import build_run_input
+from intake import build_run_input, create_analysis_run
+from models import RunInput
 
 
 class TestBuildRunInputValid:
@@ -78,5 +79,44 @@ class TestBuildRunInputValidation:
 
     def test_result_is_run_input_instance(self):
         result = build_run_input(startup_name="Acme Corp")
-        from models import RunInput
         assert isinstance(result, RunInput)
+
+
+class TestCreateAnalysisRun:
+    def test_status_is_running(self, sample_run_input):
+        result = create_analysis_run(sample_run_input)
+        assert result.status == "running"
+
+    def test_stage_results_empty(self, sample_run_input):
+        result = create_analysis_run(sample_run_input)
+        assert result.stage_results == []
+
+    def test_memo_is_none(self, sample_run_input):
+        result = create_analysis_run(sample_run_input)
+        assert result.memo is None
+
+    def test_preserves_input_data(self, sample_run_input):
+        result = create_analysis_run(sample_run_input)
+        assert result.input == sample_run_input
+        assert result.input.startup_name == sample_run_input.startup_name
+        assert result.input.website_url == sample_run_input.website_url
+        assert result.input.description == sample_run_input.description
+
+    def test_has_valid_uuid4_id(self, sample_run_input):
+        result = create_analysis_run(sample_run_input)
+        assert uuid.UUID(result.id).version == 4
+
+    def test_id_differs_from_run_input_id(self, sample_run_input):
+        result = create_analysis_run(sample_run_input)
+        assert result.id != sample_run_input.id
+
+    def test_has_valid_iso8601_created_at(self, sample_run_input):
+        result = create_analysis_run(sample_run_input)
+        assert datetime.fromisoformat(result.created_at).tzinfo is not None
+
+    def test_works_with_minimal_run_input(self):
+        minimal = RunInput(startup_name="Minimal")
+        result = create_analysis_run(minimal)
+        assert result.status == "running"
+        assert result.input.startup_name == "Minimal"
+        assert result.input.website_url is None
