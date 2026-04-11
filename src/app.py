@@ -41,6 +41,7 @@ def render_summary_field(label: str, value: str | None) -> None:
     st.markdown(f"**{label}:**")
     st.text(value)
 
+
 st.set_page_config(
     page_title="VentureLens AI",
     page_icon="🔍",
@@ -58,10 +59,7 @@ has_active_run = "analysis_run" in st.session_state
 
 st.title("🔍 VentureLens AI")
 st.subheader("AI-Powered Startup Due Diligence")
-st.markdown(
-    "Enter a startup name and any supporting context to prepare a "
-    "structured, source-backed diligence run."
-)
+st.markdown("Enter a startup name and any supporting context to prepare a structured, source-backed diligence run.")
 if run_feedback is not None:
     level, message = run_feedback
     if level == "success":

@@ -66,9 +66,7 @@ def load_run(run_id: str, db_path: str | Path = DEFAULT_DB_PATH) -> AnalysisRun 
 
 def list_runs(db_path: str | Path = DEFAULT_DB_PATH) -> list[RunSummary]:
     with _connect(db_path) as connection:
-        rows = connection.execute(
-            "SELECT id, status, created_at, data FROM runs ORDER BY created_at DESC"
-        ).fetchall()
+        rows = connection.execute("SELECT id, status, created_at, data FROM runs ORDER BY created_at DESC").fetchall()
 
     return [
         RunSummary(
