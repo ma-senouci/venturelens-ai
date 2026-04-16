@@ -3,7 +3,14 @@ import os
 from collections.abc import Callable
 
 from config import Settings
-from models import AgentFindings, CompetitionFindings, MarketFindings, RunInput
+from models import (
+    AgentFindings,
+    CompetitionFindings,
+    MarketFindings,
+    ProductFindings,
+    RiskFindings,
+    RunInput,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +43,49 @@ Focus on:
 - Adjacent alternatives or substitutes
 - Differentiation claims and defensibility
 - Barriers to entry and switching costs
+- Explicit gaps where data is unavailable or inconclusive
+
+Startup: {startup_name}
+Website: {website_url}
+Description: {description}
+Thesis: {thesis}
+Analysis focus: {analysis_focus}
+
+Return structured findings with sources for every claim. \
+If evidence is too weak to support a finding, convert it into an evidence gap \
+and lower your confidence score instead of returning an unsupported claim."""
+
+_PRODUCT_PROMPT = """\
+You are a product positioning analyst. Given the following startup information, \
+evaluate the product's market positioning using public web sources.
+
+Focus on:
+- Product-market fit signals and validation evidence
+- Unique value proposition clarity and defensibility
+- Positioning relative to alternatives and substitutes
+- Go-to-market approach and early traction indicators
+- Explicit gaps where data is unavailable or inconclusive
+
+Startup: {startup_name}
+Website: {website_url}
+Description: {description}
+Thesis: {thesis}
+Analysis focus: {analysis_focus}
+
+Return structured findings with sources for every claim. \
+If evidence is too weak to support a finding, convert it into an evidence gap \
+and lower your confidence score instead of returning an unsupported claim."""
+
+_RISK_PROMPT = """\
+You are a risk assessment analyst. Given the following startup information, \
+identify and evaluate key risks using public web sources.
+
+Focus on:
+- Market risks (shrinking demand, regulatory headwinds, macro factors)
+- Execution risks (team gaps, operational complexity, scaling challenges)
+- Financial risks (burn rate concerns, funding dependency, unit economics)
+- Technology risks (technical debt indicators, platform dependencies)
+- Competitive risks (incumbent response, low barriers to entry)
 - Explicit gaps where data is unavailable or inconclusive
 
 Startup: {startup_name}
@@ -178,10 +228,32 @@ def run_competition_agent(run_input: RunInput, settings: Settings) -> Competitio
     )
 
 
-def build_market_and_competition_agents(
+def run_product_agent(run_input: RunInput, settings: Settings) -> ProductFindings:
+    return _run_crew_for_findings(
+        run_input=run_input,
+        settings=settings,
+        prompt_template=_PRODUCT_PROMPT,
+        findings_cls=ProductFindings,
+        agent_role="product positioning analyst",
+    )
+
+
+def run_risk_agent(run_input: RunInput, settings: Settings) -> RiskFindings:
+    return _run_crew_for_findings(
+        run_input=run_input,
+        settings=settings,
+        prompt_template=_RISK_PROMPT,
+        findings_cls=RiskFindings,
+        agent_role="risk assessment analyst",
+    )
+
+
+def build_all_research_agents(
     settings: Settings,
 ) -> dict[str, Callable[[RunInput], AgentFindings]]:
     return {
         "market": lambda run_input: run_market_agent(run_input, settings),
         "competition": lambda run_input: run_competition_agent(run_input, settings),
+        "product": lambda run_input: run_product_agent(run_input, settings),
+        "risk": lambda run_input: run_risk_agent(run_input, settings),
     }

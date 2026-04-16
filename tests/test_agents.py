@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from models import CompetitionFindings, MarketFindings, RunInput
+from models import CompetitionFindings, MarketFindings, ProductFindings, RiskFindings, RunInput
 
 
 @dataclass
@@ -257,11 +257,61 @@ def test_no_none_pydantic_raises_value_error(basic_run_input, fake_settings):
         run_market_agent(basic_run_input, fake_settings)
 
 
-def test_build_market_and_competition_agents_returns_correct_keys(fake_settings):
-    from agents import build_market_and_competition_agents
+def test_product_agent_returns_product_findings(basic_run_input, fake_settings):
+    from agents import run_product_agent
 
-    agent_map = build_market_and_competition_agents(fake_settings)
+    expected = ProductFindings(
+        key_findings=["Strong PMF signals"],
+        evidence_gaps=[],
+        sources=["https://example.com/product"],
+        confidence=0.8,
+    )
+    FakeCrew._kickoff_return = FakeCrewOutput(pydantic=expected)
 
-    assert set(agent_map.keys()) == {"market", "competition"}
-    assert callable(agent_map["market"])
-    assert callable(agent_map["competition"])
+    result = run_product_agent(basic_run_input, fake_settings)
+
+    assert isinstance(result, ProductFindings)
+    assert result.key_findings == ["Strong PMF signals"]
+    assert result.sources == ["https://example.com/product"]
+    assert result.confidence == 0.8
+
+
+def test_risk_agent_returns_risk_findings(basic_run_input, fake_settings):
+    from agents import run_risk_agent
+
+    expected = RiskFindings(
+        key_findings=["High burn rate"],
+        evidence_gaps=[],
+        sources=["https://example.com/risk"],
+        confidence=0.7,
+    )
+    FakeCrew._kickoff_return = FakeCrewOutput(pydantic=expected)
+
+    result = run_risk_agent(basic_run_input, fake_settings)
+
+    assert isinstance(result, RiskFindings)
+    assert result.key_findings == ["High burn rate"]
+    assert result.sources == ["https://example.com/risk"]
+    assert result.confidence == 0.7
+
+
+def test_build_all_research_agents_returns_all_four_keys(basic_run_input, fake_settings):
+    from agents import build_all_research_agents
+
+    expected = ProductFindings(
+        key_findings=["PMF confirmed"],
+        evidence_gaps=[],
+        sources=["https://example.com/product"],
+        confidence=0.8,
+    )
+    FakeCrew._kickoff_return = FakeCrewOutput(pydantic=expected)
+
+    agent_map = build_all_research_agents(fake_settings)
+
+    assert set(agent_map.keys()) == {"market", "competition", "product", "risk"}
+    for key in ("market", "competition", "product", "risk"):
+        assert callable(agent_map[key])
+
+    result = agent_map["product"](basic_run_input)
+    assert isinstance(result, ProductFindings)
+    assert result.key_findings == ["PMF confirmed"]
