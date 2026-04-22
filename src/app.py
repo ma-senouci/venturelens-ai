@@ -1,14 +1,27 @@
 import logging
+import time
 
 import streamlit as st
 
 from config import ConfigError, get_settings
 from intake import build_run_input, create_analysis_run
-from models import RunInput
+from models import RunInput, StageResult
+from orchestrator import PIPELINE_STAGES, PipelineResult
 from persistence import save_run
+from pipeline_runner import start_pipeline_thread
 
 logger = logging.getLogger(__name__)
 RUN_FEEDBACK_KEY = "analysis_run_feedback"
+
+STAGE_LABELS = {
+    "market": "Market Research",
+    "competition": "Competition Analysis",
+    "product": "Product Positioning",
+    "risk": "Risk Assessment",
+}
+STATUS_ICONS = {"completed": "✅", "failed": "❌", "in_progress": "⏳", "pending": "⬜"}
+
+_POLL_INTERVAL_SECONDS = 0.5
 
 
 def start_analysis_run(run_input: RunInput) -> None:
@@ -34,12 +47,82 @@ def start_analysis_run(run_input: RunInput) -> None:
             analysis_run.input.id,
         )
 
+        settings = get_settings()
+        progress = {"stage_results": [], "pipeline_result": None}
+        st.session_state["pipeline_progress"] = progress
+        thread = start_pipeline_thread(run_input, settings, progress)
+        st.session_state["pipeline_thread"] = thread
+
 
 def render_summary_field(label: str, value: str | None) -> None:
     if value is None:
         return
     st.markdown(f"**{label}:**")
     st.text(value)
+
+
+def _find_stage_result(stage_results: list[StageResult], stage_name: str) -> StageResult | None:
+    for sr in stage_results:
+        if sr.stage_name == stage_name:
+            return sr
+    return None
+
+
+def render_progress_display() -> None:
+    progress = st.session_state.get("pipeline_progress")
+    if progress is None:
+        return
+
+    stage_results = progress["stage_results"]
+    pipeline_result = progress["pipeline_result"]
+    pipeline_finished = pipeline_result is not None
+
+    if pipeline_finished:
+        if pipeline_result.status == "complete":
+            label, state, expanded = "Analysis complete", "complete", False
+        elif pipeline_result.status == "partial":
+            label, state, expanded = "Analysis partially complete", "error", True
+        else:
+            label, state, expanded = "Analysis failed", "error", True
+    else:
+        label, state, expanded = "Running analysis...", "running", True
+
+    with st.status(label, expanded=expanded, state=state):
+        for stage_name in PIPELINE_STAGES:
+            stage_result = _find_stage_result(stage_results, stage_name)
+            if stage_result:
+                icon = STATUS_ICONS[stage_result.status]
+                st.write(f"{icon} {STAGE_LABELS[stage_name]}")
+                if stage_result.error:
+                    st.caption(f"Error: {stage_result.error}")
+            else:
+                st.write(f"{STATUS_ICONS['pending']} {STAGE_LABELS[stage_name]}")
+
+    if pipeline_finished and pipeline_result.status == "partial":
+        st.warning("Some research stages failed. Results shown are from completed stages only.")
+
+    if pipeline_finished:
+        _finalize_run(pipeline_result)
+
+
+def _finalize_run(pipeline_result: PipelineResult) -> None:
+    analysis_run = st.session_state.get("analysis_run")
+    if analysis_run is None or analysis_run.status != "running":
+        return
+
+    updated = analysis_run.model_copy(
+        update={
+            "status": pipeline_result.status,
+            "stage_results": pipeline_result.stage_results,
+        }
+    )
+    st.session_state["analysis_run"] = updated
+
+    try:
+        save_run(updated)
+    except Exception:
+        logger.exception("Failed to persist completed run %s", updated.id)
+        st.error("Failed to save the completed analysis run.")
 
 
 st.set_page_config(
@@ -143,4 +226,9 @@ if display_input is not None:
     )
 
 if has_active_run:
-    st.info("A run is already in progress.")
+    render_progress_display()
+
+    thread = st.session_state.get("pipeline_thread")
+    if thread and thread.is_alive():
+        time.sleep(_POLL_INTERVAL_SECONDS)
+        st.rerun()
