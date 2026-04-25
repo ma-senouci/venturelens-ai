@@ -125,6 +125,67 @@ def _finalize_run(pipeline_result: PipelineResult) -> None:
         st.error("Failed to save the completed analysis run.")
 
 
+def render_findings_display(stage_results: list[StageResult]) -> None:
+    has_completed = any(sr.status == "completed" and sr.findings is not None for sr in stage_results)
+    if not has_completed:
+        return
+
+    st.subheader("Research Findings")
+
+    for sr in stage_results:
+        label = STAGE_LABELS.get(sr.stage_name, sr.stage_name)
+
+        if sr.status == "failed":
+            st.caption(f"❌ {label} — Failed: {sr.error}")
+            continue
+
+        if sr.status != "completed" or sr.findings is None:
+            continue
+
+        findings = sr.findings
+        finding_count = len(findings.key_findings)
+        with st.expander(f"{label} — ✅ {finding_count} findings", expanded=False):
+            if findings.key_findings:
+                st.markdown("**Key Findings:**")
+                for i, finding in enumerate(findings.key_findings, 1):
+                    st.markdown(f"{i}. {finding}")
+
+            if findings.sources:
+                st.markdown("**Sources for this section:**")
+                for source in findings.sources:
+                    st.markdown(f"- 🔗 {source}")
+
+            if findings.evidence_gaps:
+                st.warning("**Evidence Gaps:**\n" + "\n".join(f"- {gap}" for gap in findings.evidence_gaps))
+
+
+def _collect_all_sources(stage_results: list[StageResult]) -> list[str]:
+    seen: dict[str, bool] = {}
+    for sr in stage_results:
+        if sr.status == "completed" and sr.findings is not None:
+            for source in sr.findings.sources:
+                stripped = source.strip()
+                if stripped and stripped not in seen:
+                    seen[stripped] = True
+    return list(seen.keys())
+
+
+def render_consolidated_sources(stage_results: list[StageResult]) -> None:
+    completed_stage_names = {
+        sr.stage_name for sr in stage_results if sr.status == "completed" and sr.findings is not None
+    }
+    if completed_stage_names != set(PIPELINE_STAGES):
+        return
+
+    all_sources = _collect_all_sources(stage_results)
+    if not all_sources:
+        return
+
+    with st.expander(f"Consolidated Sources — {len(all_sources)} references", expanded=False):
+        for i, source in enumerate(all_sources, 1):
+            st.markdown(f"{i}. {source}")
+
+
 st.set_page_config(
     page_title="VentureLens AI",
     page_icon="🔍",
@@ -227,6 +288,15 @@ if display_input is not None:
 
 if has_active_run:
     render_progress_display()
+
+    progress = st.session_state.get("pipeline_progress")
+    pipeline_result = progress.get("pipeline_result") if progress else None
+    if pipeline_result is not None:
+        analysis_run = st.session_state.get("analysis_run")
+        if analysis_run and analysis_run.stage_results:
+            render_findings_display(analysis_run.stage_results)
+            if pipeline_result.status == "complete":
+                render_consolidated_sources(analysis_run.stage_results)
 
     thread = st.session_state.get("pipeline_thread")
     if thread and thread.is_alive():
