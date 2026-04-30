@@ -1,8 +1,8 @@
 import logging
 from collections.abc import Callable
 
-from models import AgentFindings, StageResult
-from orchestrator import PIPELINE_STAGES, PipelineResult, _resolve_pipeline_status, run_pipeline
+from models import AgentFindings, CriticFindings, StageResult
+from orchestrator import CRITIC_STAGE, PIPELINE_STAGES, PipelineResult, _resolve_pipeline_status, run_pipeline
 
 
 def make_success_agent(stage_name: str) -> Callable:
@@ -26,6 +26,27 @@ def make_failing_agent(error: Exception) -> Callable:
 
 def build_success_agents() -> dict[str, Callable]:
     return {stage_name: make_success_agent(stage_name) for stage_name in PIPELINE_STAGES}
+
+
+def make_success_critic() -> Callable:
+    def critic(_run_input, _stage_results) -> CriticFindings:
+        return CriticFindings(
+            contradictions=["Test contradiction"],
+            weak_assumptions=[],
+            unsupported_claims=[],
+            open_questions=[],
+            sources=["https://example.com/review"],
+            confidence=0.8,
+        )
+
+    return critic
+
+
+def make_failing_critic(error: Exception) -> Callable:
+    def critic(_run_input, _stage_results):
+        raise error
+
+    return critic
 
 
 def test_run_pipeline_returns_complete_when_all_stages_succeed(sample_run_input):
@@ -206,3 +227,83 @@ def test_resolve_pipeline_status_uses_stage_results_length():
     stage_results = [StageResult(stage_name="market", status="completed", findings=None)]
 
     assert _resolve_pipeline_status(stage_results) == "complete"
+
+
+def test_run_pipeline_with_critic_runs_after_research_and_includes_critic(sample_run_input):
+    result = run_pipeline(sample_run_input, build_success_agents(), critic_agent=make_success_critic())
+
+    assert result.status == "complete"
+    assert [stage_result.stage_name for stage_result in result.stage_results] == PIPELINE_STAGES + [CRITIC_STAGE]
+    critic_result = result.stage_results[-1]
+    assert critic_result.status == "completed"
+    assert isinstance(critic_result.findings, CriticFindings)
+    assert critic_result.findings.contradictions == ["Test contradiction"]
+
+
+def test_run_pipeline_with_critic_emits_callback_for_critic_stage(sample_run_input):
+    callback_results: list[StageResult] = []
+
+    run_pipeline(
+        sample_run_input,
+        build_success_agents(),
+        on_stage_update=callback_results.append,
+        critic_agent=make_success_critic(),
+    )
+
+    assert [stage_result.stage_name for stage_result in callback_results] == PIPELINE_STAGES + [CRITIC_STAGE]
+    assert callback_results[-1].status == "completed"
+
+
+def test_run_pipeline_with_critic_skips_when_all_research_stages_fail(sample_run_input):
+    agents = {stage_name: make_failing_agent(RuntimeError(f"{stage_name} failed")) for stage_name in PIPELINE_STAGES}
+
+    result = run_pipeline(sample_run_input, agents, critic_agent=make_success_critic())
+
+    assert result.status == "failed"
+    assert [stage_result.stage_name for stage_result in result.stage_results] == PIPELINE_STAGES + [CRITIC_STAGE]
+    critic_result = result.stage_results[-1]
+    assert critic_result.status == "failed"
+    assert critic_result.error == "No completed research findings to review"
+
+
+def test_run_pipeline_with_critic_runs_on_partial_results(sample_run_input):
+    agents = build_success_agents()
+    agents["competition"] = make_failing_agent(RuntimeError("competition timeout"))
+
+    result = run_pipeline(sample_run_input, agents, critic_agent=make_success_critic())
+
+    assert result.status == "partial"
+    assert [stage_result.stage_name for stage_result in result.stage_results] == PIPELINE_STAGES + [CRITIC_STAGE]
+    assert result.stage_results[1].status == "failed"
+    assert result.stage_results[-1].status == "completed"
+
+
+def test_run_pipeline_handles_critic_failure_gracefully(sample_run_input, caplog):
+    with caplog.at_level(logging.ERROR):
+        result = run_pipeline(
+            sample_run_input,
+            build_success_agents(),
+            critic_agent=make_failing_critic(RuntimeError("critic timeout")),
+        )
+
+    assert result.status == "partial"
+    critic_result = result.stage_results[-1]
+    assert critic_result.stage_name == CRITIC_STAGE
+    assert critic_result.status == "failed"
+    assert critic_result.error == "critic timeout"
+    assert "Stage 'critic' failed: critic timeout" in caplog.text
+
+
+def test_run_pipeline_treats_none_critic_findings_as_failure(sample_run_input, caplog):
+    def none_critic(_run_input, _stage_results):
+        return None
+
+    with caplog.at_level(logging.ERROR):
+        result = run_pipeline(sample_run_input, build_success_agents(), critic_agent=none_critic)
+
+    assert result.status == "partial"
+    critic_result = result.stage_results[-1]
+    assert critic_result.stage_name == CRITIC_STAGE
+    assert critic_result.status == "failed"
+    assert critic_result.error == "Critic agent returned no findings"
+    assert "Stage 'critic' failed: Critic agent returned no findings" in caplog.text

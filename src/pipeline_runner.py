@@ -2,7 +2,7 @@ import logging
 import threading
 from collections.abc import Callable
 
-from agents import build_all_research_agents
+from agents import build_all_research_agents, build_critic_agent
 from config import Settings
 from models import RunInput, StageResult
 from orchestrator import PipelineResult, run_pipeline
@@ -26,7 +26,8 @@ def run_analysis_pipeline(
     on_stage_update: Callable[[StageResult], None] = lambda _stage_result: None,
 ) -> PipelineResult:
     agents = build_all_research_agents(settings)
-    return run_pipeline(run_input, agents, on_stage_update=on_stage_update)
+    critic = build_critic_agent(settings)
+    return run_pipeline(run_input, agents, on_stage_update=on_stage_update, critic_agent=critic)
 
 
 def start_pipeline_thread(

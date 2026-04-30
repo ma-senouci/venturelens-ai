@@ -2,11 +2,12 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from models import AgentFindings, RunInput, StageResult
+from models import AgentFindings, CriticFindings, RunInput, StageResult
 
 logger = logging.getLogger(__name__)
 
 PIPELINE_STAGES = ["market", "competition", "product", "risk"]
+CRITIC_STAGE = "critic"
 _AGENT_ERRORS = (ValueError, RuntimeError, TimeoutError, OSError)
 _CALLBACK_ERRORS = (AttributeError, LookupError, RuntimeError, TypeError, ValueError)
 
@@ -51,6 +52,7 @@ def run_pipeline(
     run_input: RunInput,
     run_agents: dict[str, Callable[[RunInput], AgentFindings]],
     on_stage_update: Callable[[StageResult], None] = lambda _stage_result: None,
+    critic_agent: Callable[[RunInput, list[StageResult]], CriticFindings] | None = None,
 ) -> PipelineResult:
     _validate_run_agents(run_agents)
     stage_results: list[StageResult] = []
@@ -68,5 +70,34 @@ def run_pipeline(
 
         stage_results.append(stage_result)
         _emit_stage_update(on_stage_update, stage_result)
+
+    if critic_agent is not None:
+        completed_count = sum(1 for stage_result in stage_results if stage_result.status == "completed")
+        if completed_count == 0:
+            critic_result = StageResult(
+                stage_name=CRITIC_STAGE,
+                status="failed",
+                error="No completed research findings to review",
+            )
+        else:
+            try:
+                critic_findings = critic_agent(run_input, stage_results)
+                if critic_findings is None:
+                    raise ValueError("Critic agent returned no findings")
+                critic_result = StageResult(
+                    stage_name=CRITIC_STAGE,
+                    status="completed",
+                    findings=critic_findings,
+                )
+            except _AGENT_ERRORS as exc:
+                logger.error("Stage '%s' failed: %s", CRITIC_STAGE, exc)
+                critic_result = StageResult(
+                    stage_name=CRITIC_STAGE,
+                    status="failed",
+                    error=str(exc),
+                )
+
+        stage_results.append(critic_result)
+        _emit_stage_update(on_stage_update, critic_result)
 
     return PipelineResult(status=_resolve_pipeline_status(stage_results), stage_results=stage_results)
