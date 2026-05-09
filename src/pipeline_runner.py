@@ -4,6 +4,7 @@ from collections.abc import Callable
 
 from agents import build_all_research_agents, build_critic_agent
 from config import Settings
+from memo_generator import build_recommendation_agent
 from models import RunInput, StageResult
 from orchestrator import PipelineResult, run_pipeline
 
@@ -27,7 +28,14 @@ def run_analysis_pipeline(
 ) -> PipelineResult:
     agents = build_all_research_agents(settings)
     critic = build_critic_agent(settings)
-    return run_pipeline(run_input, agents, on_stage_update=on_stage_update, critic_agent=critic)
+    recommendation = build_recommendation_agent(settings)
+    return run_pipeline(
+        run_input,
+        agents,
+        on_stage_update=on_stage_update,
+        critic_agent=critic,
+        recommendation_agent=recommendation,
+    )
 
 
 def start_pipeline_thread(

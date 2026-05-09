@@ -1,8 +1,15 @@
 import logging
 from collections.abc import Callable
 
-from models import AgentFindings, CriticFindings, StageResult
-from orchestrator import CRITIC_STAGE, PIPELINE_STAGES, PipelineResult, _resolve_pipeline_status, run_pipeline
+from models import AgentFindings, CriticFindings, MemoOutput, StageResult
+from orchestrator import (
+    CRITIC_STAGE,
+    PIPELINE_STAGES,
+    RECOMMENDATION_STAGE,
+    PipelineResult,
+    _resolve_pipeline_status,
+    run_pipeline,
+)
 
 
 def make_success_agent(stage_name: str) -> Callable:
@@ -47,6 +54,36 @@ def make_failing_critic(error: Exception) -> Callable:
         raise error
 
     return critic
+
+
+def make_success_recommendation() -> Callable:
+    def recommendation(_run_input, _stage_results) -> MemoOutput:
+        findings = AgentFindings(
+            sources=["https://example.com/market"],
+            confidence=0.8,
+            key_findings=["market finding"],
+            evidence_gaps=[],
+        )
+        return MemoOutput(
+            executive_summary="Recommendation summary",
+            research_findings={"market": findings},
+            independent_review=None,
+            recommendation="Watch",
+            confidence=0.65,
+            confidence_factors=["Independent Review not available"],
+            unresolved_risks=["Open risk"],
+            open_questions=["Open question"],
+            sources=["https://example.com/market"],
+        )
+
+    return recommendation
+
+
+def make_failing_recommendation(error: Exception) -> Callable:
+    def recommendation(_run_input, _stage_results):
+        raise error
+
+    return recommendation
 
 
 def test_run_pipeline_returns_complete_when_all_stages_succeed(sample_run_input):
@@ -307,3 +344,96 @@ def test_run_pipeline_treats_none_critic_findings_as_failure(sample_run_input, c
     assert critic_result.status == "failed"
     assert critic_result.error == "Critic agent returned no findings"
     assert "Stage 'critic' failed: Critic agent returned no findings" in caplog.text
+
+
+def test_run_pipeline_with_recommendation_runs_after_critic_and_is_included(sample_run_input):
+    result = run_pipeline(
+        sample_run_input,
+        build_success_agents(),
+        critic_agent=make_success_critic(),
+        recommendation_agent=make_success_recommendation(),
+    )
+
+    assert result.status == "complete"
+    assert [stage_result.stage_name for stage_result in result.stage_results] == (
+        PIPELINE_STAGES + [CRITIC_STAGE, RECOMMENDATION_STAGE]
+    )
+    recommendation_result = result.stage_results[-1]
+    assert recommendation_result.status == "completed"
+    assert recommendation_result.findings is None
+    assert recommendation_result.error is None
+
+
+def test_run_pipeline_with_recommendation_emits_callback(sample_run_input):
+    callback_results: list[StageResult] = []
+
+    run_pipeline(
+        sample_run_input,
+        build_success_agents(),
+        on_stage_update=callback_results.append,
+        critic_agent=make_success_critic(),
+        recommendation_agent=make_success_recommendation(),
+    )
+
+    assert [stage_result.stage_name for stage_result in callback_results] == (
+        PIPELINE_STAGES + [CRITIC_STAGE, RECOMMENDATION_STAGE]
+    )
+    assert callback_results[-1].status == "completed"
+
+
+def test_run_pipeline_with_recommendation_skips_when_all_research_fail(sample_run_input):
+    agents = {stage_name: make_failing_agent(RuntimeError(f"{stage_name} failed")) for stage_name in PIPELINE_STAGES}
+
+    result = run_pipeline(
+        sample_run_input,
+        agents,
+        critic_agent=make_success_critic(),
+        recommendation_agent=make_success_recommendation(),
+    )
+
+    assert result.status == "failed"
+    assert [stage_result.stage_name for stage_result in result.stage_results] == (
+        PIPELINE_STAGES + [CRITIC_STAGE, RECOMMENDATION_STAGE]
+    )
+    recommendation_result = result.stage_results[-1]
+    assert recommendation_result.status == "failed"
+    assert recommendation_result.error == "No completed research findings to synthesize"
+
+
+def test_run_pipeline_with_recommendation_runs_when_critic_fails(sample_run_input):
+    result = run_pipeline(
+        sample_run_input,
+        build_success_agents(),
+        critic_agent=make_failing_critic(RuntimeError("critic timeout")),
+        recommendation_agent=make_success_recommendation(),
+    )
+
+    assert result.status == "partial"
+    assert [stage_result.stage_name for stage_result in result.stage_results] == (
+        PIPELINE_STAGES + [CRITIC_STAGE, RECOMMENDATION_STAGE]
+    )
+    assert result.stage_results[-2].status == "failed"
+    assert result.stage_results[-1].status == "completed"
+
+
+def test_run_pipeline_is_backward_compatible_when_recommendation_agent_omitted(sample_run_input):
+    result = run_pipeline(sample_run_input, build_success_agents(), critic_agent=make_success_critic())
+
+    assert [stage_result.stage_name for stage_result in result.stage_results] == PIPELINE_STAGES + [CRITIC_STAGE]
+
+
+def test_run_pipeline_handles_recommendation_failure_gracefully(sample_run_input, caplog):
+    with caplog.at_level(logging.ERROR):
+        result = run_pipeline(
+            sample_run_input,
+            build_success_agents(),
+            critic_agent=make_success_critic(),
+            recommendation_agent=make_failing_recommendation(RuntimeError("recommendation timeout")),
+        )
+
+    assert result.status == "partial"
+    recommendation_result = result.stage_results[-1]
+    assert recommendation_result.stage_name == RECOMMENDATION_STAGE
+    assert recommendation_result.status == "failed"
+    assert recommendation_result.error == "recommendation timeout"
+    assert "Stage 'recommendation' failed: recommendation timeout" in caplog.text

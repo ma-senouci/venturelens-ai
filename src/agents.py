@@ -2,7 +2,7 @@ import logging
 import os
 from collections.abc import Callable
 
-from config import Settings
+from config import OPENAI_API_KEY_ENV_VAR, OPENAI_MODEL_NAME_ENV_VAR, SERPER_API_KEY_ENV_VAR, Settings
 from models import (
     AgentFindings,
     CompetitionFindings,
@@ -139,9 +139,9 @@ def _load_crewai_runtime():
 
 
 def _set_agent_env_vars(settings: Settings) -> None:
-    os.environ["OPENAI_API_KEY"] = settings.openai_api_key
-    os.environ["OPENAI_MODEL_NAME"] = settings.openai_model_name
-    os.environ["SERPER_API_KEY"] = settings.serper_api_key
+    os.environ[OPENAI_API_KEY_ENV_VAR] = settings.openai_api_key
+    os.environ[OPENAI_MODEL_NAME_ENV_VAR] = settings.openai_model_name
+    os.environ[SERPER_API_KEY_ENV_VAR] = settings.serper_api_key
 
 
 def _format_prompt(template: str, run_input: RunInput) -> str:
@@ -213,7 +213,6 @@ def _format_findings_for_critic(stage_results: list[StageResult]) -> str:
         if (
             stage_result is None
             or stage_result.status != "completed"
-            or stage_result.findings is None
             or not isinstance(stage_result.findings, AgentFindings)
         ):
             serialized_sections.append(f"{stage_label}: FAILED - not available for review")

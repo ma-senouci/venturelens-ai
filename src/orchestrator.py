@@ -2,12 +2,13 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from models import AgentFindings, CriticFindings, RunInput, StageResult
+from models import AgentFindings, CriticFindings, MemoOutput, RunInput, StageResult
 
 logger = logging.getLogger(__name__)
 
 PIPELINE_STAGES = ["market", "competition", "product", "risk"]
 CRITIC_STAGE = "critic"
+RECOMMENDATION_STAGE = "recommendation"
 _AGENT_ERRORS = (ValueError, RuntimeError, TimeoutError, OSError)
 _CALLBACK_ERRORS = (AttributeError, LookupError, RuntimeError, TypeError, ValueError)
 
@@ -53,6 +54,7 @@ def run_pipeline(
     run_agents: dict[str, Callable[[RunInput], AgentFindings]],
     on_stage_update: Callable[[StageResult], None] = lambda _stage_result: None,
     critic_agent: Callable[[RunInput, list[StageResult]], CriticFindings] | None = None,
+    recommendation_agent: Callable[[RunInput, list[StageResult]], MemoOutput] | None = None,
 ) -> PipelineResult:
     _validate_run_agents(run_agents)
     stage_results: list[StageResult] = []
@@ -71,9 +73,14 @@ def run_pipeline(
         stage_results.append(stage_result)
         _emit_stage_update(on_stage_update, stage_result)
 
+    completed_research_count = sum(
+        1
+        for stage_result in stage_results
+        if stage_result.stage_name in PIPELINE_STAGES and stage_result.status == "completed"
+    )
+
     if critic_agent is not None:
-        completed_count = sum(1 for stage_result in stage_results if stage_result.status == "completed")
-        if completed_count == 0:
+        if completed_research_count == 0:
             critic_result = StageResult(
                 stage_name=CRITIC_STAGE,
                 status="failed",
@@ -99,5 +106,32 @@ def run_pipeline(
 
         stage_results.append(critic_result)
         _emit_stage_update(on_stage_update, critic_result)
+
+    if recommendation_agent is not None:
+        if completed_research_count == 0:
+            recommendation_result = StageResult(
+                stage_name=RECOMMENDATION_STAGE,
+                status="failed",
+                error="No completed research findings to synthesize",
+            )
+        else:
+            try:
+                memo = recommendation_agent(run_input, stage_results)
+                if memo is None:
+                    raise ValueError("Recommendation agent returned no memo")
+                recommendation_result = StageResult(
+                    stage_name=RECOMMENDATION_STAGE,
+                    status="completed",
+                )
+            except _AGENT_ERRORS as exc:
+                logger.error("Stage '%s' failed: %s", RECOMMENDATION_STAGE, exc)
+                recommendation_result = StageResult(
+                    stage_name=RECOMMENDATION_STAGE,
+                    status="failed",
+                    error=str(exc),
+                )
+
+        stage_results.append(recommendation_result)
+        _emit_stage_update(on_stage_update, recommendation_result)
 
     return PipelineResult(status=_resolve_pipeline_status(stage_results), stage_results=stage_results)

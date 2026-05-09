@@ -1,6 +1,6 @@
 import logging
 
-from models import AgentFindings, CriticFindings, RunInput, StageResult
+from models import AgentFindings, RunInput, StageResult
 from orchestrator import PIPELINE_STAGES, PipelineResult
 
 
@@ -29,7 +29,7 @@ class TestRunAnalysisPipeline:
         monkeypatch.setattr("pipeline_runner.build_all_research_agents", lambda _settings: _make_fake_agents())
         monkeypatch.setattr(
             "pipeline_runner.run_pipeline",
-            lambda run_input, agents, on_stage_update=None, critic_agent=None: expected,
+            lambda run_input, agents, on_stage_update=None, critic_agent=None, recommendation_agent=None: expected,
         )
 
         from config import Settings
@@ -44,9 +44,10 @@ class TestRunAnalysisPipeline:
     def test_passes_callback_and_critic_to_run_pipeline(self, sample_run_input, monkeypatch):
         captured = {}
 
-        def fake_run_pipeline(run_input, agents, on_stage_update=None, critic_agent=None):
+        def fake_run_pipeline(run_input, agents, on_stage_update=None, critic_agent=None, recommendation_agent=None):
             captured["cb"] = on_stage_update
             captured["critic"] = critic_agent
+            captured["recommendation"] = recommendation_agent
             return _make_fake_pipeline_result()
 
         monkeypatch.setattr("pipeline_runner.build_all_research_agents", lambda _settings: _make_fake_agents())
@@ -63,41 +64,7 @@ class TestRunAnalysisPipeline:
 
         assert captured["cb"] is sentinel
         assert callable(captured["critic"])
-
-
-class TestBuildCriticAgent:
-    def test_callable_delegates_to_run_critic_agent(self, sample_run_input, monkeypatch):
-        captured = {}
-        expected = CriticFindings(
-            contradictions=["Needs review"],
-            weak_assumptions=[],
-            unsupported_claims=[],
-            open_questions=[],
-            sources=["https://example.com/review"],
-            confidence=0.7,
-        )
-
-        def fake_run_critic_agent(run_input, settings, stage_results):
-            captured["run_input"] = run_input
-            captured["settings"] = settings
-            captured["stage_results"] = stage_results
-            return expected
-
-        monkeypatch.setattr("agents.run_critic_agent", fake_run_critic_agent)
-
-        from agents import build_critic_agent
-        from config import Settings
-
-        settings = Settings(openai_api_key="k", openai_model_name="m", serper_api_key="s")
-        critic = build_critic_agent(settings)
-        stage_results = [StageResult(stage_name="market", status="completed")]
-
-        result = critic(sample_run_input, stage_results)
-
-        assert result is expected
-        assert captured["run_input"] == sample_run_input
-        assert captured["settings"] == settings
-        assert captured["stage_results"] == stage_results
+        assert callable(captured["recommendation"])
 
 
 class TestBuildSessionStateCallback:
@@ -120,7 +87,7 @@ class TestStartPipelineThread:
         monkeypatch.setattr("pipeline_runner.build_all_research_agents", lambda _settings: _make_fake_agents())
         monkeypatch.setattr(
             "pipeline_runner.run_pipeline",
-            lambda run_input, agents, on_stage_update=None, critic_agent=None: expected,
+            lambda run_input, agents, on_stage_update=None, critic_agent=None, recommendation_agent=None: expected,
         )
 
         from config import Settings
@@ -138,7 +105,9 @@ class TestStartPipelineThread:
         monkeypatch.setattr("pipeline_runner.build_all_research_agents", lambda _settings: _make_fake_agents())
         monkeypatch.setattr(
             "pipeline_runner.run_pipeline",
-            lambda run_input, agents, on_stage_update=None, critic_agent=None: _make_fake_pipeline_result(),
+            lambda run_input, agents, on_stage_update=None, critic_agent=None, recommendation_agent=None: (
+                _make_fake_pipeline_result()
+            ),
         )
 
         from config import Settings
@@ -151,7 +120,13 @@ class TestStartPipelineThread:
         thread.join(timeout=5)
 
     def test_thread_error_does_not_raise_logs_instead(self, sample_run_input, monkeypatch, caplog):
-        def exploding_run_pipeline(run_input, agents, on_stage_update=None, critic_agent=None):
+        def exploding_run_pipeline(
+            run_input,
+            agents,
+            on_stage_update=None,
+            critic_agent=None,
+            recommendation_agent=None,
+        ):
             raise RuntimeError("catastrophic failure")
 
         monkeypatch.setattr("pipeline_runner.build_all_research_agents", lambda _settings: _make_fake_agents())

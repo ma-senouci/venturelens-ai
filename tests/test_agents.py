@@ -315,3 +315,37 @@ def test_build_all_research_agents_returns_all_four_keys(basic_run_input, fake_s
     result = agent_map["product"](basic_run_input)
     assert isinstance(result, ProductFindings)
     assert result.key_findings == ["PMF confirmed"]
+
+
+def test_build_critic_agent_delegates_to_run_critic_agent(basic_run_input, fake_settings, monkeypatch):
+    from models import CriticFindings, StageResult
+
+    captured = {}
+    expected = CriticFindings(
+        contradictions=["Needs review"],
+        weak_assumptions=[],
+        unsupported_claims=[],
+        open_questions=[],
+        sources=["https://example.com/review"],
+        confidence=0.7,
+    )
+
+    def fake_run_critic_agent(run_input, settings, stage_results):
+        captured["run_input"] = run_input
+        captured["settings"] = settings
+        captured["stage_results"] = stage_results
+        return expected
+
+    monkeypatch.setattr("agents.run_critic_agent", fake_run_critic_agent)
+
+    from agents import build_critic_agent
+
+    critic = build_critic_agent(fake_settings)
+    stage_results = [StageResult(stage_name="market", status="completed")]
+
+    result = critic(basic_run_input, stage_results)
+
+    assert result is expected
+    assert captured["run_input"] == basic_run_input
+    assert captured["settings"] == fake_settings
+    assert captured["stage_results"] == stage_results
