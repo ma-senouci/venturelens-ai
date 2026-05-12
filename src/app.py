@@ -5,8 +5,8 @@ import streamlit as st
 
 from config import ConfigError, get_settings
 from intake import build_run_input, create_analysis_run
-from models import RunInput, StageResult
-from orchestrator import PIPELINE_STAGES, PipelineResult
+from models import AgentFindings, RunInput, StageResult
+from orchestrator import CRITIC_STAGE, PIPELINE_STAGES, PipelineResult
 from persistence import save_run
 from pipeline_runner import start_pipeline_thread
 
@@ -18,6 +18,7 @@ STAGE_LABELS = {
     "competition": "Competition Analysis",
     "product": "Product Positioning",
     "risk": "Risk Assessment",
+    CRITIC_STAGE: "Independent Review",
 }
 STATUS_ICONS = {"completed": "✅", "failed": "❌", "in_progress": "⏳", "pending": "⬜"}
 
@@ -68,6 +69,14 @@ def _find_stage_result(stage_results: list[StageResult], stage_name: str) -> Sta
     return None
 
 
+def _is_completed_research_stage(stage_result: StageResult) -> bool:
+    return (
+        stage_result.stage_name in PIPELINE_STAGES
+        and stage_result.status == "completed"
+        and isinstance(stage_result.findings, AgentFindings)
+    )
+
+
 def render_progress_display() -> None:
     progress = st.session_state.get("pipeline_progress")
     if progress is None:
@@ -87,8 +96,13 @@ def render_progress_display() -> None:
     else:
         label, state, expanded = "Running analysis...", "running", True
 
+    progress_stage_names = list(PIPELINE_STAGES)
+    critic_stage_result = _find_stage_result(stage_results, CRITIC_STAGE)
+    if critic_stage_result is not None or not pipeline_finished:
+        progress_stage_names.append(CRITIC_STAGE)
+
     with st.status(label, expanded=expanded, state=state):
-        for stage_name in PIPELINE_STAGES:
+        for stage_name in progress_stage_names:
             stage_result = _find_stage_result(stage_results, stage_name)
             if stage_result:
                 icon = STATUS_ICONS[stage_result.status]
@@ -126,20 +140,23 @@ def _finalize_run(pipeline_result: PipelineResult) -> None:
 
 
 def render_findings_display(stage_results: list[StageResult]) -> None:
-    has_completed = any(sr.status == "completed" and sr.findings is not None for sr in stage_results)
+    has_completed = any(_is_completed_research_stage(sr) for sr in stage_results)
     if not has_completed:
         return
 
     st.subheader("Research Findings")
 
     for sr in stage_results:
+        if sr.stage_name not in PIPELINE_STAGES:
+            continue
+
         label = STAGE_LABELS.get(sr.stage_name, sr.stage_name)
 
         if sr.status == "failed":
             st.caption(f"❌ {label} — Failed: {sr.error}")
             continue
 
-        if sr.status != "completed" or sr.findings is None:
+        if not _is_completed_research_stage(sr):
             continue
 
         findings = sr.findings
@@ -162,7 +179,7 @@ def render_findings_display(stage_results: list[StageResult]) -> None:
 def _collect_all_sources(stage_results: list[StageResult]) -> list[str]:
     seen: dict[str, bool] = {}
     for sr in stage_results:
-        if sr.status == "completed" and sr.findings is not None:
+        if _is_completed_research_stage(sr):
             for source in sr.findings.sources:
                 stripped = source.strip()
                 if stripped and stripped not in seen:
@@ -171,10 +188,8 @@ def _collect_all_sources(stage_results: list[StageResult]) -> list[str]:
 
 
 def render_consolidated_sources(stage_results: list[StageResult]) -> None:
-    completed_stage_names = {
-        sr.stage_name for sr in stage_results if sr.status == "completed" and sr.findings is not None
-    }
-    if completed_stage_names != set(PIPELINE_STAGES):
+    completed_research_stage_names = {sr.stage_name for sr in stage_results if _is_completed_research_stage(sr)}
+    if completed_research_stage_names != set(PIPELINE_STAGES):
         return
 
     all_sources = _collect_all_sources(stage_results)

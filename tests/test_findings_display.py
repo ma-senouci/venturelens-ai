@@ -2,7 +2,15 @@ import importlib
 import sys
 from unittest.mock import MagicMock, patch
 
-from models import AgentFindings, CompetitionFindings, MarketFindings, ProductFindings, RiskFindings, StageResult
+from models import (
+    AgentFindings,
+    CompetitionFindings,
+    CriticFindings,
+    MarketFindings,
+    ProductFindings,
+    RiskFindings,
+    StageResult,
+)
 
 
 def _completed_stage(stage_name, key_findings=None, sources=None, evidence_gaps=None):
@@ -26,6 +34,21 @@ def _completed_stage(stage_name, key_findings=None, sources=None, evidence_gaps=
 
 def _failed_stage(stage_name, error="API rate limit exceeded"):
     return StageResult(stage_name=stage_name, status="failed", error=error)
+
+
+def _completed_critic_stage(sources=None):
+    return StageResult(
+        stage_name="critic",
+        status="completed",
+        findings=CriticFindings(
+            contradictions=["Conflicting retention signals"],
+            weak_assumptions=["Expansion assumptions are thin"],
+            unsupported_claims=["Category leadership is unproven"],
+            open_questions=["What is net revenue retention?"],
+            sources=sources if sources is not None else ["https://example.com/critic"],
+            confidence=0.7,
+        ),
+    )
 
 
 class TestRenderFindingsDisplay:
@@ -113,6 +136,23 @@ class TestRenderFindingsDisplay:
         assert len(warning_calls) == 1
         assert "No public financials" in warning_calls[0][0][0]
 
+    def test_ignores_completed_critic_stage_in_research_findings_display(self):
+        stage_results = [
+            _completed_stage("market", key_findings=["Growing TAM"]),
+            _completed_critic_stage(),
+        ]
+
+        with patch("app.st") as mock_st:
+            from app import render_findings_display
+
+            render_findings_display(stage_results)
+
+        expander_calls = mock_st.expander.call_args_list
+        labels = [call[0][0] for call in expander_calls]
+        assert len(expander_calls) == 1
+        assert any("Market Research" in label for label in labels)
+        assert all("critic" not in label.casefold() for label in labels)
+
 
 class TestRenderConsolidatedSources:
     def test_deduplicates_sources_across_stages(self):
@@ -134,6 +174,27 @@ class TestRenderConsolidatedSources:
         assert "https://a.com" in rendered
         assert "https://c.com" in rendered
         assert "https://e.com" in rendered
+
+    def test_renders_with_completed_critic_stage_and_ignores_critic_sources(self):
+        stage_results = [
+            _completed_stage("market", sources=["https://a.com"]),
+            _completed_stage("competition", sources=["https://b.com"]),
+            _completed_stage("product", sources=["https://c.com"]),
+            _completed_stage("risk", sources=["https://d.com"]),
+            _completed_critic_stage(sources=["https://critic.com"]),
+        ]
+
+        with patch("app.st") as mock_st:
+            from app import render_consolidated_sources
+
+            render_consolidated_sources(stage_results)
+
+        mock_st.expander.assert_called_once()
+        md_calls = [c[0][0] for c in mock_st.markdown.call_args_list]
+        rendered = "\n".join(md_calls)
+        assert "https://a.com" in rendered
+        assert "https://d.com" in rendered
+        assert "https://critic.com" not in rendered
 
     def test_skips_rendering_when_no_sources(self):
         stage_results = [
