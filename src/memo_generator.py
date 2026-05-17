@@ -156,6 +156,10 @@ def _format_recommendation_context(stage_results: list[StageResult]) -> str:
         review_lines.extend(f"- {item}" for item in critic_findings.unsupported_claims)
         review_lines.append("Open questions:" if critic_findings.open_questions else "Open questions: None identified")
         review_lines.extend(f"- {item}" for item in critic_findings.open_questions)
+        review_lines.append(
+            "Missing perspectives:" if critic_findings.missing_perspectives else "Missing perspectives: None identified"
+        )
+        review_lines.extend(f"- {item}" for item in critic_findings.missing_perspectives)
         review_lines.append("Sources:" if critic_findings.sources else "Sources: None provided")
         review_lines.extend(f"- {item}" for item in critic_findings.sources)
         review_lines.append(f"Confidence: {critic_findings.confidence:.2f}")
@@ -252,6 +256,7 @@ def _collect_open_questions(stage_results: list[StageResult]) -> list[str]:
 
     if critic_findings is not None:
         questions.extend(critic_findings.open_questions)
+        questions.extend(critic_findings.missing_perspectives)
 
     for findings in _extract_research_findings(stage_results).values():
         questions.extend(findings.evidence_gaps)

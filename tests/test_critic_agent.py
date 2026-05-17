@@ -125,6 +125,7 @@ def test_run_critic_agent_returns_critic_findings(basic_run_input, fake_settings
         open_questions=["What is the actual customer retention?"],
         sources=["https://example.com/market", "https://example.com/comp"],
         confidence=0.72,
+        missing_perspectives=["No customer interview evidence"],
     )
     FakeCrew._kickoff_return = FakeCrewOutput(pydantic=expected)
 
@@ -137,6 +138,7 @@ def test_run_critic_agent_returns_critic_findings(basic_run_input, fake_settings
     assert result.open_questions == ["What is the actual customer retention?"]
     assert result.sources == ["https://example.com/market", "https://example.com/comp"]
     assert result.confidence == 0.72
+    assert result.missing_perspectives == ["No customer interview evidence"]
 
 
 def test_format_findings_for_critic_includes_completed_and_failed_stages():
@@ -165,6 +167,7 @@ def test_normalize_critic_findings_strips_dedupes_and_clamps():
             open_questions=["  What is churn?  ", ""],
             sources=[" https://example.com/a ", "https://example.com/a", ""],
             confidence=3.0,
+            missing_perspectives=["  No pricing validation  ", "", "No pricing validation"],
         )
     )
 
@@ -174,6 +177,7 @@ def test_normalize_critic_findings_strips_dedupes_and_clamps():
     assert normalized.open_questions == ["What is churn?"]
     assert normalized.sources == ["https://example.com/a"]
     assert normalized.confidence == 1.0
+    assert normalized.missing_perspectives == ["No pricing validation"]
 
 
 def test_run_critic_agent_raises_when_no_pydantic_output(basic_run_input, fake_settings):

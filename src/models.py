@@ -65,6 +65,7 @@ class CriticFindings(BaseModel):
     open_questions: list[str]
     sources: list[str]
     confidence: ConfidenceScore
+    missing_perspectives: list[str] = []
 
 
 class StageResult(BaseModel):

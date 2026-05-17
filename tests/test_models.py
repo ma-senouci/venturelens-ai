@@ -91,6 +91,18 @@ class TestSpecializedFindings:
 
 
 class TestCriticFindings:
+    def test_defaults_missing_perspectives_to_empty_list(self):
+        findings = CriticFindings(
+            contradictions=["c1"],
+            weak_assumptions=["w1"],
+            unsupported_claims=["u1"],
+            open_questions=["q1"],
+            sources=["s1"],
+            confidence=0.7,
+        )
+
+        assert findings.missing_perspectives == []
+
     def test_round_trip_json(self):
         original = CriticFindings(
             contradictions=["c1"],
@@ -99,9 +111,11 @@ class TestCriticFindings:
             open_questions=["q1"],
             sources=["s1"],
             confidence=0.7,
+            missing_perspectives=["m1"],
         )
         restored = CriticFindings.model_validate_json(original.model_dump_json())
         assert original == restored
+        assert restored.missing_perspectives == ["m1"]
 
 
 class TestStageResult:
@@ -124,6 +138,7 @@ class TestStageResult:
             open_questions=["q1"],
             sources=["s1"],
             confidence=0.6,
+            missing_perspectives=[],
         )
         stage_result = StageResult(stage_name="critic", status="completed", findings=critic)
         assert isinstance(stage_result.findings, CriticFindings)

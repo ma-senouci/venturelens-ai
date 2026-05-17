@@ -127,6 +127,7 @@ def _make_stage_results(
                     open_questions=["What is retention by cohort?"],
                     sources=["https://example.com/review", "https://example.com/shared"],
                     confidence=0.67,
+                    missing_perspectives=["No customer willingness-to-pay evidence"],
                 ),
             )
         )
@@ -271,6 +272,7 @@ def test_open_questions_merge_critic_questions_with_evidence_gaps():
     questions = _collect_open_questions(_make_stage_results())
 
     assert "What is retention by cohort?" in questions
+    assert "No customer willingness-to-pay evidence" in questions
     assert "Need pricing data" in questions
     assert "Limited retention proof" in questions
 
@@ -299,6 +301,8 @@ def test_format_recommendation_context_includes_research_and_critic_findings():
     assert "1. Growing TAM" in context
     assert "Independent Review:" in context
     assert "Market growth conflicts with churn signals" in context
+    assert "Missing perspectives:" in context
+    assert "No customer willingness-to-pay evidence" in context
 
 
 def test_calculate_base_confidence_exact_values():

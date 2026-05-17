@@ -47,6 +47,7 @@ def _completed_critic_stage(sources=None):
             open_questions=["What is net revenue retention?"],
             sources=sources if sources is not None else ["https://example.com/critic"],
             confidence=0.7,
+            missing_perspectives=[],
         ),
     )
 

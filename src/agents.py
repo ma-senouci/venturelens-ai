@@ -130,6 +130,11 @@ _CRITIC_STAGE_LABELS = {
     "risk": "Risk Assessment",
 }
 
+_CRITIC_EXPECTED_OUTPUT = (
+    "Structured critic findings with contradictions, weak assumptions, "
+    "unsupported claims, open questions, missing perspectives, sources, and confidence"
+)
+
 
 def _load_crewai_runtime():
     from crewai import Agent, Crew, Process, Task
@@ -156,6 +161,15 @@ def _format_prompt(template: str, run_input: RunInput) -> str:
     for placeholder, value in replacements.items():
         result = result.replace(placeholder, value)
     return result
+
+
+def _normalize_string_list(items: list[str]) -> list[str]:
+    seen: dict[str, bool] = {}
+    for item in items:
+        stripped = item.strip()
+        if stripped and stripped not in seen:
+            seen[stripped] = True
+    return list(seen.keys())
 
 
 def _normalize_findings(findings: AgentFindings) -> AgentFindings:
@@ -186,12 +200,13 @@ def _normalize_findings(findings: AgentFindings) -> AgentFindings:
 
 def _normalize_critic_findings(findings: CriticFindings) -> CriticFindings:
     return CriticFindings(
-        contradictions=[item.strip() for item in findings.contradictions if item and item.strip()],
-        weak_assumptions=[item.strip() for item in findings.weak_assumptions if item and item.strip()],
-        unsupported_claims=[item.strip() for item in findings.unsupported_claims if item and item.strip()],
-        open_questions=[item.strip() for item in findings.open_questions if item and item.strip()],
-        sources=list(dict.fromkeys(item.strip() for item in findings.sources if item and item.strip())),
+        contradictions=_normalize_string_list(findings.contradictions),
+        weak_assumptions=_normalize_string_list(findings.weak_assumptions),
+        unsupported_claims=_normalize_string_list(findings.unsupported_claims),
+        open_questions=_normalize_string_list(findings.open_questions),
+        sources=_normalize_string_list(findings.sources),
         confidence=max(0.0, min(1.0, findings.confidence)),
+        missing_perspectives=_normalize_string_list(findings.missing_perspectives),
     )
 
 
@@ -317,10 +332,7 @@ def _run_crew_for_critic(
     task_description = _format_prompt(_CRITIC_PROMPT, run_input).replace("{findings_context}", findings_context)
     review_task = Task(
         description=task_description,
-        expected_output=(
-            "Structured critic findings with contradictions, weak assumptions, "
-            "unsupported claims, open questions, sources, and confidence"
-        ),
+        expected_output=_CRITIC_EXPECTED_OUTPUT,
         agent=reviewer,
         output_pydantic=CriticFindings,
     )

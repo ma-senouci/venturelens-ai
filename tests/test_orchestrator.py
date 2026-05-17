@@ -44,6 +44,7 @@ def make_success_critic() -> Callable:
             open_questions=[],
             sources=["https://example.com/review"],
             confidence=0.8,
+            missing_perspectives=[],
         )
 
     return critic
@@ -347,11 +348,13 @@ def test_run_pipeline_treats_none_critic_findings_as_failure(sample_run_input, c
 
 
 def test_run_pipeline_with_recommendation_runs_after_critic_and_is_included(sample_run_input):
+    expected_memo = make_success_recommendation()(sample_run_input, [])
+
     result = run_pipeline(
         sample_run_input,
         build_success_agents(),
         critic_agent=make_success_critic(),
-        recommendation_agent=make_success_recommendation(),
+        recommendation_agent=lambda _ri, _sr: expected_memo,
     )
 
     assert result.status == "complete"
@@ -362,6 +365,7 @@ def test_run_pipeline_with_recommendation_runs_after_critic_and_is_included(samp
     assert recommendation_result.status == "completed"
     assert recommendation_result.findings is None
     assert recommendation_result.error is None
+    assert result.memo is expected_memo
 
 
 def test_run_pipeline_with_recommendation_emits_callback(sample_run_input):
@@ -398,6 +402,7 @@ def test_run_pipeline_with_recommendation_skips_when_all_research_fail(sample_ru
     recommendation_result = result.stage_results[-1]
     assert recommendation_result.status == "failed"
     assert recommendation_result.error == "No completed research findings to synthesize"
+    assert result.memo is None
 
 
 def test_run_pipeline_with_recommendation_runs_when_critic_fails(sample_run_input):
@@ -420,6 +425,7 @@ def test_run_pipeline_is_backward_compatible_when_recommendation_agent_omitted(s
     result = run_pipeline(sample_run_input, build_success_agents(), critic_agent=make_success_critic())
 
     assert [stage_result.stage_name for stage_result in result.stage_results] == PIPELINE_STAGES + [CRITIC_STAGE]
+    assert result.memo is None
 
 
 def test_run_pipeline_handles_recommendation_failure_gracefully(sample_run_input, caplog):
@@ -436,4 +442,5 @@ def test_run_pipeline_handles_recommendation_failure_gracefully(sample_run_input
     assert recommendation_result.stage_name == RECOMMENDATION_STAGE
     assert recommendation_result.status == "failed"
     assert recommendation_result.error == "recommendation timeout"
+    assert result.memo is None
     assert "Stage 'recommendation' failed: recommendation timeout" in caplog.text

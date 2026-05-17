@@ -33,6 +33,7 @@ def sample_analysis_run(sample_run_input, sample_agent_findings):
         open_questions=["How repeatable is the sales motion?"],
         sources=["https://example.com/review"],
         confidence=0.74,
+        missing_perspectives=[],
     )
     critic_stage = StageResult(stage_name="critic", status="completed", findings=critic)
     memo = MemoOutput(

@@ -35,6 +35,7 @@ def _make_critic_stage_result(status="completed", error=None):
             open_questions=[],
             sources=["https://example.com/review"],
             confidence=0.7,
+            missing_perspectives=[],
         )
         if status == "completed"
         else None

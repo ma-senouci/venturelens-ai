@@ -17,6 +17,7 @@ _CALLBACK_ERRORS = (AttributeError, LookupError, RuntimeError, TypeError, ValueE
 class PipelineResult:
     status: str
     stage_results: list[StageResult]
+    memo: MemoOutput | None = None
 
 
 def _resolve_pipeline_status(stage_results: list[StageResult]) -> str:
@@ -58,6 +59,7 @@ def run_pipeline(
 ) -> PipelineResult:
     _validate_run_agents(run_agents)
     stage_results: list[StageResult] = []
+    pipeline_memo: MemoOutput | None = None
 
     for stage_name in PIPELINE_STAGES:
         try:
@@ -119,6 +121,7 @@ def run_pipeline(
                 memo = recommendation_agent(run_input, stage_results)
                 if memo is None:
                     raise ValueError("Recommendation agent returned no memo")
+                pipeline_memo = memo
                 recommendation_result = StageResult(
                     stage_name=RECOMMENDATION_STAGE,
                     status="completed",
@@ -134,4 +137,8 @@ def run_pipeline(
         stage_results.append(recommendation_result)
         _emit_stage_update(on_stage_update, recommendation_result)
 
-    return PipelineResult(status=_resolve_pipeline_status(stage_results), stage_results=stage_results)
+    return PipelineResult(
+        status=_resolve_pipeline_status(stage_results),
+        stage_results=stage_results,
+        memo=pipeline_memo,
+    )

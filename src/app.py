@@ -128,6 +128,7 @@ def _finalize_run(pipeline_result: PipelineResult) -> None:
         update={
             "status": pipeline_result.status,
             "stage_results": pipeline_result.stage_results,
+            "memo": pipeline_result.memo,
         }
     )
     st.session_state["analysis_run"] = updated

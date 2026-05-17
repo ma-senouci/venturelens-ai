@@ -328,6 +328,7 @@ def test_build_critic_agent_delegates_to_run_critic_agent(basic_run_input, fake_
         open_questions=[],
         sources=["https://example.com/review"],
         confidence=0.7,
+        missing_perspectives=[],
     )
 
     def fake_run_critic_agent(run_input, settings, stage_results):
