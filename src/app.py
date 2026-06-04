@@ -5,7 +5,7 @@ import streamlit as st
 
 from config import ConfigError, get_settings
 from intake import build_run_input, create_analysis_run
-from models import AgentFindings, RunInput, StageResult
+from models import AgentFindings, MemoOutput, RunInput, StageResult
 from orchestrator import CRITIC_STAGE, PIPELINE_STAGES, PipelineResult
 from persistence import save_run
 from pipeline_runner import start_pipeline_thread
@@ -23,6 +23,21 @@ STAGE_LABELS = {
 STATUS_ICONS = {"completed": "✅", "failed": "❌", "in_progress": "⏳", "pending": "⬜"}
 
 _POLL_INTERVAL_SECONDS = 0.5
+_DISCLAIMER_TEXT = (
+    "⚠️ This memo is a decision-support artifact based on public information. "
+    "It is not investment advice. All findings require independent verification "
+    "and human judgment."
+)
+_CONFIDENCE_CAPTION = (
+    "Confidence reflects evidence strength across completed research perspectives, "
+    "adjusted for contradictions, gaps, and missing data."
+)
+_PARTIAL_RUN_WARNING = (
+    "⚠️ This recommendation is based on incomplete evidence. "
+    "Some research stages failed or did not complete. "
+    "Review confidence factors below for details."
+)
+_LOW_CONFIDENCE_WARNING = "Low confidence score — significant evidence gaps or contradictions were identified."
 
 
 def start_analysis_run(run_input: RunInput) -> None:
@@ -202,6 +217,48 @@ def render_consolidated_sources(stage_results: list[StageResult]) -> None:
             st.markdown(f"{i}. {source}")
 
 
+def _render_bulleted_items(items: list[str]) -> None:
+    if not items:
+        st.markdown("None identified")
+        return
+
+    for item in items:
+        st.markdown(f"- {item}")
+
+
+def render_memo_display(memo: MemoOutput, run_status: str) -> None:
+    st.subheader("Decision Memo")
+    st.info(_DISCLAIMER_TEXT)
+    if run_status == "partial":
+        st.warning(_PARTIAL_RUN_WARNING)
+    st.markdown(memo.executive_summary)
+    st.markdown(f"### Recommendation: {memo.recommendation}")
+    st.markdown(f"**Confidence:** {memo.confidence:.0%}")
+    if memo.confidence < 0.5:
+        st.warning(_LOW_CONFIDENCE_WARNING)
+    st.caption(_CONFIDENCE_CAPTION)
+
+    with st.expander("Confidence Factors", expanded=False):
+        _render_bulleted_items(memo.confidence_factors)
+
+    n_risks = len(memo.unresolved_risks)
+    risks_label = f"Unresolved Risks — {n_risks} item{'s' if n_risks != 1 else ''}"
+    with st.expander(risks_label, expanded=False):
+        _render_bulleted_items(memo.unresolved_risks)
+
+    questions_label = f"Open Questions — {len(memo.open_questions)} item{'s' if len(memo.open_questions) != 1 else ''}"
+    with st.expander(questions_label, expanded=False):
+        _render_bulleted_items(memo.open_questions)
+
+    sources_label = f"Sources — {len(memo.sources)} reference{'s' if len(memo.sources) != 1 else ''}"
+    with st.expander(sources_label, expanded=False):
+        if not memo.sources:
+            st.markdown("None identified")
+        else:
+            for i, source in enumerate(memo.sources, 1):
+                st.markdown(f"{i}. {source}")
+
+
 st.set_page_config(
     page_title="VentureLens AI",
     page_icon="🔍",
@@ -313,6 +370,8 @@ if has_active_run:
             render_findings_display(analysis_run.stage_results)
             if pipeline_result.status == "complete":
                 render_consolidated_sources(analysis_run.stage_results)
+            if analysis_run.memo is not None:
+                render_memo_display(analysis_run.memo, analysis_run.status)
 
     thread = st.session_state.get("pipeline_thread")
     if thread and thread.is_alive():
