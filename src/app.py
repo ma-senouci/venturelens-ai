@@ -1,5 +1,6 @@
 import logging
 import time
+from datetime import datetime
 
 import streamlit as st
 
@@ -7,7 +8,7 @@ from config import ConfigError, get_settings
 from intake import build_run_input, create_analysis_run
 from models import AgentFindings, MemoOutput, RunInput, StageResult
 from orchestrator import CRITIC_STAGE, PIPELINE_STAGES, PipelineResult
-from persistence import save_run
+from persistence import list_runs, load_run, save_run
 from pipeline_runner import start_pipeline_thread
 
 logger = logging.getLogger(__name__)
@@ -41,6 +42,7 @@ _LOW_CONFIDENCE_WARNING = "Low confidence score — significant evidence gaps or
 
 
 def start_analysis_run(run_input: RunInput) -> None:
+    st.session_state.pop("selected_historical_run", None)
     analysis_run = create_analysis_run(run_input)
     try:
         save_run(analysis_run)
@@ -259,6 +261,62 @@ def render_memo_display(memo: MemoOutput, run_status: str) -> None:
                 st.markdown(f"{i}. {source}")
 
 
+_SIDEBAR_STATUS_ICONS = {
+    "complete": "✅",
+    "partial": "⚠️",
+    "failed": "❌",
+    "running": "🔄",
+}
+
+
+def _format_run_date(iso_date: str) -> str:
+    return datetime.fromisoformat(iso_date).strftime("%b %d, %Y")
+
+
+def _load_historical_run(run_id: str) -> None:
+    try:
+        historical_run = load_run(run_id)
+    except Exception:
+        logger.exception("Failed to load run %s", run_id)
+        st.session_state["historical_run_error"] = "Failed to load the selected run."
+        return
+
+    if historical_run is None:
+        st.session_state["historical_run_error"] = "Run not found."
+        return
+
+    st.session_state["selected_historical_run"] = historical_run
+    st.session_state.pop("historical_run_error", None)
+
+
+def render_run_history_sidebar() -> None:
+    with st.sidebar:
+        st.header("Run History")
+        try:
+            runs = list_runs()
+        except Exception:
+            logger.exception("Failed to load run history")
+            st.caption("Unable to load run history")
+            return
+
+        if not runs:
+            st.caption("No completed runs yet")
+            return
+
+        active_run = st.session_state.get("analysis_run")
+        for run_summary in runs:
+            is_active = active_run is not None and run_summary.id == active_run.id
+            if is_active and active_run.status == "running":
+                status_icon = "🔄"
+            else:
+                status_icon = _SIDEBAR_STATUS_ICONS.get(run_summary.status, "")
+
+            label = f"{status_icon} {run_summary.startup_name} — {_format_run_date(run_summary.created_at)}"
+            disabled = is_active and active_run.status == "running"
+            if st.button(label, key=f"run_{run_summary.id}", disabled=disabled, use_container_width=True):
+                _load_historical_run(run_summary.id)
+
+
 st.set_page_config(
     page_title="VentureLens AI",
     page_icon="🔍",
@@ -270,6 +328,8 @@ try:
 except ConfigError as error:
     st.error(str(error))
     st.stop()
+
+render_run_history_sidebar()
 
 run_feedback = st.session_state.pop(RUN_FEEDBACK_KEY, None)
 has_active_run = "analysis_run" in st.session_state
@@ -358,6 +418,22 @@ if display_input is not None:
         on_click=start_analysis_run,
         args=(display_input,),
     )
+
+selected_historical = st.session_state.get("selected_historical_run")
+historical_run_error = st.session_state.pop("historical_run_error", None)
+if historical_run_error is not None:
+    st.error(historical_run_error)
+if selected_historical is not None and not has_active_run:
+    st.subheader(f"Historical Run: {selected_historical.input.startup_name}")
+    render_summary_field("Startup", selected_historical.input.startup_name)
+    render_summary_field("Website", selected_historical.input.website_url)
+    render_summary_field("Status", selected_historical.status)
+    if selected_historical.stage_results:
+        render_findings_display(selected_historical.stage_results)
+        if selected_historical.status == "complete":
+            render_consolidated_sources(selected_historical.stage_results)
+    if selected_historical.memo is not None:
+        render_memo_display(selected_historical.memo, selected_historical.status)
 
 if has_active_run:
     render_progress_display()

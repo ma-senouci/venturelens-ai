@@ -14,10 +14,32 @@ class _NullContext:
         return False
 
 
+class _FakeSidebarContext:
+    def __init__(self, parent):
+        self._parent = parent
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def header(self, *args, **kwargs):
+        pass
+
+    def caption(self, *args, **kwargs):
+        pass
+
+
 class FakeStreamlit:
     def __init__(self):
         self.session_state = {}
         self.errors: list[str] = []
+        self._sidebar_ctx = _FakeSidebarContext(self)
+
+    @property
+    def sidebar(self):
+        return self._sidebar_ctx
 
     def set_page_config(self, **kwargs):
         pass
@@ -61,10 +83,19 @@ class FakeStreamlit:
     def write(self, *args, **kwargs):
         pass
 
+    def text(self, *args, **kwargs):
+        pass
+
     def caption(self, *args, **kwargs):
         pass
 
+    def header(self, *args, **kwargs):
+        pass
+
     def warning(self, *args, **kwargs):
+        pass
+
+    def info(self, *args, **kwargs):
         pass
 
     def expander(self, *args, **kwargs):
@@ -76,9 +107,11 @@ class FakeStreamlit:
 
 def _import_app(monkeypatch):
     import config
+    import persistence
 
     fake_st = FakeStreamlit()
     monkeypatch.setattr(config, "get_settings", lambda: object())
+    monkeypatch.setattr(persistence, "list_runs", lambda **kwargs: [])
     monkeypatch.setitem(sys.modules, "streamlit", fake_st)
     monkeypatch.delitem(sys.modules, "app", raising=False)
     return importlib.import_module("app"), fake_st
