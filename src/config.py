@@ -1,4 +1,3 @@
-from functools import lru_cache
 from typing import Any
 
 from pydantic import Field, ValidationError, field_validator
@@ -12,6 +11,11 @@ DEFAULT_OPENAI_MODEL_NAME = "gpt-4o-mini"
 _REQUIRED_ENV_FIELDS = (
     ("openai_api_key", OPENAI_API_KEY_ENV_VAR),
     ("serper_api_key", SERPER_API_KEY_ENV_VAR),
+)
+
+API_KEY_FIELDS = (
+    ("sidebar_openai_api_key", OPENAI_API_KEY_ENV_VAR, "OpenAI API Key"),
+    ("sidebar_serper_api_key", SERPER_API_KEY_ENV_VAR, "Serper API Key"),
 )
 
 
@@ -69,7 +73,6 @@ def _format_missing_env_vars(missing_env_vars: list[str]) -> str:
     return f"Missing required {label}: {', '.join(missing_env_vars)}"
 
 
-@lru_cache(maxsize=1)
 def get_settings() -> Settings:
     try:
         return Settings()

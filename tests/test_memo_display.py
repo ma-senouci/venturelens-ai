@@ -1,118 +1,10 @@
 import importlib
 import sys
 
+from fake_streamlit import FakeStreamlit
+
 from models import AgentFindings, AnalysisRun, MemoOutput, RunInput, StageResult
 from orchestrator import PipelineResult
-
-
-class _NullContext:
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        return False
-
-
-class _FakeSidebarContext:
-    def __init__(self, parent):
-        self._parent = parent
-
-    def __enter__(self):
-        self._parent._in_sidebar = True
-        return self
-
-    def __exit__(self, *args):
-        self._parent._in_sidebar = False
-        return False
-
-    def header(self, *args, **kwargs):
-        pass
-
-    def caption(self, *args, **kwargs):
-        pass
-
-
-class FakeStreamlit:
-    def __init__(self):
-        self.session_state = {}
-        self.errors: list[str] = []
-        self.infos: list[str] = []
-        self.warnings: list[str] = []
-        self.captions: list[str] = []
-        self.subheaders: list[str] = []
-        self.markdowns: list[str] = []
-        self.expander_labels: list[str] = []
-        self._in_sidebar = False
-        self._sidebar_ctx = _FakeSidebarContext(self)
-
-    @property
-    def sidebar(self):
-        return self._sidebar_ctx
-
-    def set_page_config(self, **kwargs):
-        pass
-
-    def error(self, message):
-        self.errors.append(message)
-
-    def stop(self):
-        raise AssertionError("st.stop should not be called during test setup")
-
-    def title(self, *args, **kwargs):
-        pass
-
-    def subheader(self, text, *args, **kwargs):
-        self.subheaders.append(text)
-
-    def markdown(self, text, *args, **kwargs):
-        self.markdowns.append(text)
-
-    def text(self, *args, **kwargs):
-        pass
-
-    def success(self, *args, **kwargs):
-        pass
-
-    def form(self, *args, **kwargs):
-        return _NullContext()
-
-    def text_input(self, *args, **kwargs):
-        return ""
-
-    def text_area(self, *args, **kwargs):
-        return ""
-
-    def form_submit_button(self, *args, **kwargs):
-        return False
-
-    def button(self, *args, **kwargs):
-        return False
-
-    def status(self, *args, **kwargs):
-        return _NullContext()
-
-    def write(self, *args, **kwargs):
-        pass
-
-    def caption(self, message, *args, **kwargs):
-        if not self._in_sidebar:
-            self.captions.append(message)
-
-    def warning(self, message, *args, **kwargs):
-        self.warnings.append(message)
-
-    def info(self, message, *args, **kwargs):
-        self.infos.append(message)
-
-    def header(self, *args, **kwargs):
-        pass
-
-    def expander(self, label, *args, **kwargs):
-        self.expander_labels.append(label)
-        return _NullContext()
-
-    def rerun(self):
-        pass
 
 
 def _import_app(monkeypatch, session_state=None):
@@ -209,6 +101,7 @@ def test_render_memo_display_renders_summary_recommendation_and_confidence(monke
 
 def test_render_memo_display_creates_collapsible_audit_sections(monkeypatch):
     app, fake_st = _import_app(monkeypatch)
+    fake_st.expander_labels.clear()
 
     app.render_memo_display(_make_complete_memo(), "complete")
 
@@ -230,6 +123,7 @@ def test_render_memo_display_shows_empty_list_audit_fallbacks(monkeypatch):
 
 def test_render_memo_display_shows_disclaimer_banner(monkeypatch):
     app, fake_st = _import_app(monkeypatch)
+    fake_st.infos.clear()
 
     app.render_memo_display(_make_complete_memo(), "complete")
 

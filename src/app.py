@@ -1,10 +1,11 @@
 import logging
+import os
 import time
 from datetime import datetime
 
 import streamlit as st
 
-from config import ConfigError, get_settings
+from config import API_KEY_FIELDS, ConfigError, Settings, get_settings
 from intake import build_run_input, create_analysis_run
 from models import AgentFindings, MemoOutput, RunInput, StageResult
 from orchestrator import CRITIC_STAGE, PIPELINE_STAGES, PipelineResult
@@ -41,7 +42,9 @@ _PARTIAL_RUN_WARNING = (
 _LOW_CONFIDENCE_WARNING = "Low confidence score — significant evidence gaps or contradictions were identified."
 
 
-def start_analysis_run(run_input: RunInput) -> None:
+def start_analysis_run(run_input: RunInput, settings: Settings | None) -> None:
+    if settings is None:
+        return
     st.session_state.pop("selected_historical_run", None)
     analysis_run = create_analysis_run(run_input)
     try:
@@ -65,11 +68,29 @@ def start_analysis_run(run_input: RunInput) -> None:
             analysis_run.input.id,
         )
 
-        settings = get_settings()
         progress = {"stage_results": [], "pipeline_result": None}
         st.session_state["pipeline_progress"] = progress
         thread = start_pipeline_thread(run_input, settings, progress)
         st.session_state["pipeline_thread"] = thread
+
+
+def render_api_config_sidebar() -> None:
+    with st.sidebar:
+        with st.expander("⚙️ API Configuration", expanded=True):
+            for session_key, _env_var, label in API_KEY_FIELDS:
+                st.text_input(label, type="password", key=session_key)
+
+
+def _resolve_settings() -> Settings | None:
+    for session_key, env_var, _label in API_KEY_FIELDS:
+        value = st.session_state.get(session_key, "")
+        if value and value.strip():
+            os.environ[env_var] = value.strip()
+
+    try:
+        return get_settings()
+    except ConfigError:
+        return None
 
 
 def render_summary_field(label: str, value: str | None) -> None:
@@ -323,16 +344,24 @@ st.set_page_config(
     layout="wide",
 )
 
-try:
-    get_settings()
-except ConfigError as error:
-    st.error(str(error))
-    st.stop()
-
+render_api_config_sidebar()
 render_run_history_sidebar()
+
+resolved_settings = _resolve_settings()
+keys_available = resolved_settings is not None
+
+if keys_available:
+    env_keys_present = all(os.environ.get(env_var) for _sk, env_var, _l in API_KEY_FIELDS)
+    sidebar_keys_entered = any(st.session_state.get(sk) for sk, _ev, _l in API_KEY_FIELDS)
+    if env_keys_present and not sidebar_keys_entered:
+        with st.sidebar:
+            st.caption("✅ API keys configured via environment")
 
 run_feedback = st.session_state.pop(RUN_FEEDBACK_KEY, None)
 has_active_run = "analysis_run" in st.session_state
+
+if not keys_available:
+    st.info("Enter your API keys in the sidebar to get started.")
 
 st.title("🔍 VentureLens AI")
 st.subheader("AI-Powered Startup Due Diligence")
@@ -373,7 +402,7 @@ with st.form("intake_form"):
     submitted = st.form_submit_button(
         "Prepare analysis",
         use_container_width=True,
-        disabled=has_active_run,
+        disabled=not keys_available or has_active_run,
     )
 
 if submitted:
@@ -414,9 +443,9 @@ if display_input is not None:
     st.button(
         "Run analysis",
         use_container_width=True,
-        disabled=has_active_run,
+        disabled=not keys_available or has_active_run,
         on_click=start_analysis_run,
-        args=(display_input,),
+        args=(display_input, resolved_settings),
     )
 
 selected_historical = st.session_state.get("selected_historical_run")

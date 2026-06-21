@@ -14,15 +14,13 @@ def _set_required_env(monkeypatch, *, openai_api_key="sk-test", serper_api_key="
 
 
 @pytest.fixture(autouse=True)
-def reset_settings_cache(monkeypatch):
+def reset_settings_env(monkeypatch):
     _TEST_WORKDIR.mkdir(exist_ok=True)
     monkeypatch.chdir(_TEST_WORKDIR)
     for env_var in ("OPENAI_API_KEY", "OPENAI_MODEL_NAME", "SERPER_API_KEY"):
         monkeypatch.delenv(env_var, raising=False)
 
-    get_settings.cache_clear()
     yield
-    get_settings.cache_clear()
 
 
 def test_get_settings_loads_required_values_from_environment(monkeypatch):
