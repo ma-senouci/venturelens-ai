@@ -19,6 +19,12 @@ The result is a source-backed investment memo with a clear **Invest**, **Watch**
 
 Note: The live demo does not include my API keys. To use the app, provide your own `OPENAI_API_KEY` and `SERPER_API_KEY` through the sidebar.
 
+🎬 **Demo Video:**
+
+[![Watch Demo](assets/demo_thumbnail.png)](https://github.com/ma-senouci/venturelens-ai/releases/download/v1.0.0/venturelens-demo.mp4)
+
+[📥 Download the full demo video](https://github.com/ma-senouci/venturelens-ai/releases/download/v1.0.0/venturelens-demo.mp4)
+
 ---
 
 ## How It Works
@@ -173,6 +179,8 @@ venturelens-ai/
 │   └── intake.py             # Input validation and normalization
 ├── tests/                    # 15 test modules, ~100% critical-path coverage
 ├── data/                     # SQLite database (gitignored)
+├── assets/
+│   └── demo_thumbnail.png    # Demo video thumbnail for README
 ├── .env.example              # Required environment variables template
 ├── pyproject.toml            # Project config, dependencies, ruff & pytest settings
 ├── requirements.txt          # pip dependencies for Streamlit Cloud deployment
